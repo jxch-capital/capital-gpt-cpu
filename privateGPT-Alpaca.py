@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from dotenv import load_dotenv
-0from langchain.chains import RetrievalQA
+from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
@@ -17,10 +17,36 @@ persist_directory = os.environ.get('PERSIST_DIRECTORY')
 model_type = os.environ.get('MODEL_TYPE')
 model_path = os.environ.get('MODEL_PATH')
 model_n_ctx = os.environ.get('MODEL_N_CTX')
-model_n_batch = int(os.environ.get('MODEL_N_BATCH',8))
-target_source_chunks = int(os.environ.get('TARGET_SOURCE_CHUNKS',4))
+model_n_batch = int(os.environ.get('MODEL_N_BATCH', 8))
+target_source_chunks = int(os.environ.get('TARGET_SOURCE_CHUNKS', 4))
 
 from constants import CHROMA_SETTINGS
+from langchain import PromptTemplate
+
+refine_prompt_template = (
+    "Below is an instruction that describes a task. "
+    "Write a response that appropriately completes the request.\n\n"
+    "### Instruction:\n"
+    "这是原始问题: {question}\n"
+    "已有的回答: {existing_answer}\n"
+    "现在还有一些文字，（如果有需要）你可以根据它们完善现有的回答。"
+    "\n\n"
+    "{context_str}\n"
+    "\\nn"
+    "请根据新的文段，进一步完善你的回答。\n\n"
+    "### Response: "
+)
+
+initial_qa_template = (
+    "Below is an instruction that describes a task. "
+    "Write a response that appropriately completes the request.\n\n"
+    "### Instruction:\n"
+    "以下为背景知识：\n"
+    "{context_str}"
+    "\n"
+    "请根据以上背景知识, 回答这个问题：{question}。\n\n"
+    "### Response: "
+)
 
 def main():
     # Parse the command line arguments
@@ -33,14 +59,27 @@ def main():
     # Prepare the LLM
     match model_type:
         case "LlamaCpp":
-            llm = LlamaCpp(model_path=model_path, n_ctx=model_n_ctx, n_batch=model_n_batch, callbacks=callbacks, verbose=False, n_threads=16)
+            llm = LlamaCpp(model_path=model_path, n_ctx=model_n_ctx, n_batch=model_n_batch, callbacks=callbacks,
+                           verbose=False, n_threads=16)
         case "GPT4All":
-            llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', n_batch=model_n_batch, callbacks=callbacks, verbose=False)
+            llm = GPT4All(model=model_path, n_ctx=model_n_ctx, backend='gptj', n_batch=model_n_batch,
+                          callbacks=callbacks, verbose=False)
         case _default:
             # raise exception if model_type is not supported
-            raise Exception(f"Model type {model_type} is not supported. Please choose one of the following: LlamaCpp, GPT4All")
-        
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents= not args.hide_source)
+            raise Exception(
+                f"Model type {model_type} is not supported. Please choose one of the following: LlamaCpp, GPT4All")
+
+    prompt_template = ("Below is an instruction that describes a task. "
+                      "Write a response that appropriately completes the request.\n\n"
+                      "### Instruction:\n{context}\n\n{question}\n\n### Response: ")
+    from langchain import PromptTemplate
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["context","question"])
+    qa = RetrievalQA.from_chain_type(
+        llm=llm, chain_type="stuff",
+        retriever=retriever,
+        return_source_documents= not args.hide_source,
+        chain_type_kwargs={"prompt":PROMPT})
+
     # Interactive questions and answers
     while True:
         query = input("\nEnter a query: ")
@@ -66,9 +105,11 @@ def main():
             print("\n> " + document.metadata["source"] + ":")
             print(document.page_content)
 
+
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='privateGPT: Ask questions to your documents without an internet connection, '
-                                                 'using the power of LLMs.')
+    parser = argparse.ArgumentParser(
+        description='privateGPT: Ask questions to your documents without an internet connection, '
+                    'using the power of LLMs.')
     parser.add_argument("--hide-source", "-S", action='store_true',
                         help='Use this flag to disable printing of source documents used for answers.')
 
