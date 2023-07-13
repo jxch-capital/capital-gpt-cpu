@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from dotenv import load_dotenv
-0from langchain.chains import RetrievalQA
+from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.vectorstores import Chroma
